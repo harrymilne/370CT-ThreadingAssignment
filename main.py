@@ -1,4 +1,4 @@
-from threading import Thread, Condition
+from threading import Thread, Condition, active_count, get_ident
 from time import sleep
 import random
 
@@ -7,84 +7,122 @@ WHEEL_NO = 6
 WHEEL_SENSORS = [None] * WHEEL_NO ##shared memory
 
 ##states
-C_STATE = None
+STATE = None
 MOVE_TYPES = ["LIFT_WHEEL", "LOWER_WHEEL", "CALL_HOME", "REVERSE"]
-ERRORS = ["FREEWHEEL", "STUCK", ""]
+ERRORS = ["FREEWHEEL", "STUCK"]
 SOLUTIONS = {
-    "FREEWHEEL": ["LIFT_WHEEL", "LOWER_WHEEL"],
-    "STUCK": ["REVERSE"]
+    "FREEWHEEL": ["LOWER_WHEEL"],
+    "STUCK": ["LIFT_WHEEL", "LOWER_WHEEL"]
 }
 
 class RandomError:
     def __init__(self):
         self.wheel = random.randint(0, WHEEL_NO - 1)
-        self.err = random.randint(0, len(ERRORS) - 1)
+        self.err = ERRORS[random.randint(0, len(ERRORS) - 1)]
 
 class Runtime(Thread):
-    global C_STATE
-    def __init__(self, cv, distance=5):
-        global C_STATE
+    global STATE
+    def __init__(self, cv, threads, distance=5):
+        global STATE
         super().__init__()
         self.cv = cv
-        self.traveled = 0
+        self.threads = threads
         self.distance = distance
-        C_STATE = "VECTOR" ##initial bot state
+
+        self.traveled = 0
+        STATE = "VECTOR"
 
     def run(self):
-        global C_STATE
+        global STATE
         errs = []
         while self.traveled < self.distance:
             with self.cv:
-                while C_STATE != "VECTOR":
+                while STATE != "VECTOR":
                     self.cv.wait()
-                print("Vectoring...")
+                print("VECTOR thread running...")
                 sleep(1)
                 err_toss = random.randint(0, 1)
                 if err_toss: 
                     err = RandomError()
-                    print("Error occurred! {} on wheel {}.".format(ERRORS[err.err], err.wheel))
-                    C_STATE = MOVE_TYPES[random.randint(0, len(MOVE_TYPES)-1)]
-                    self.cv.notify_all()
+                    print("Error occurred! {} on wheel {}.".format(err.err, err.wheel))
+                    attempts = 0
+                    fixed = 0
+                    while not fixed and attempts < 5:
+                        print("Attempt {}".format(attempts + 1))
+                        for action in SOLUTIONS[err.err]:
+                            STATE = action
+                            self.threads[action].set_motor(err.wheel)
+                            self.cv.notify_all()
+                            while STATE != "VECTOR":
+                                self.cv.wait()
+                            fixed = random.randint(0, 1)
+                            if not fixed:
+                                print("Solution failed... Retrying...")
+                            attempts += 1
+
+                    if not fixed and attempts > 4:
+                        print("Max attempts reached, calling home...")
+                        STATE = "CALL_HOME"
+                        self.cv.notify_all()
+                        while STATE != "VECTOR":
+                            self.cv.wait()
                 else:
                     self.traveled += 1
                     print("Successfully vectored 1m... ({}/{})".format(self.traveled, self.distance))
 
         ##shutdown and notify threads
         with self.cv:
-            C_STATE = None ##setting C_STATE to None tells threads to join
+            STATE = None ##setting STATE to None tells threads to join
             self.cv.notify_all()
 
 ##default task
-class Movement(Thread):
+class Task(Thread):
     def __init__(self, cv, move_type):
         super().__init__()
         self.cv = cv
         self.thread_type = move_type
+        self.motor_id = None
+
+    def set_motor(self, wheel_no):
+        self.motor_id = wheel_no
+
+    def reset_motor(self):
+        self.motor_id = None
 
     def run(self):
-        global C_STATE
-        while C_STATE:
+        global STATE
+        while STATE:
             with self.cv: ##acquire condition
-                while C_STATE and C_STATE != self.thread_type: ##while bot alive + not passing to this thread; wait
+                while STATE and STATE != self.thread_type: ##while bot alive + not passing to this thread; wait
                     self.cv.wait()
-                if C_STATE == self.thread_type: ##if thread switched to, run logic
-                    print("{} thread running...".format(self.thread_type))
+                if STATE == self.thread_type: ##if thread switched to, run logic
+                    if self.motor_id:
+                        print("{} thread running on motor {}... (id:{})".format(self.thread_type, self.motor_id, get_ident()))
+                    else:
+                        print("{} thread running... (id:{})".format(self.thread_type, get_ident()))
                     sleep(1)
-                    C_STATE = "VECTOR" ##return back to main runtime
+                    STATE = "VECTOR" ##return back to main runtime
                     self.cv.notify_all()
+        print("{} thread (id:{}) terminated.".format(self.thread_type, get_ident()))
 
 
 if __name__ == "__main__":
     cv = Condition()
-    main = Runtime(cv)
-    threads = []
+    threads = {}
     for state in MOVE_TYPES:
-        t = Movement(cv, state)
-        t.start()
-        threads.append(t)
+        t = Task(cv, state)
+        threads[state] = t
+
+    main = Runtime(cv, threads)
     main.start()
 
-    for thread in threads:
+    for thread in threads.values():
+        thread.start()
+
+    print("{} threads spawned.".format(active_count() - 1))
+
+    for thread in threads.values():
         thread.join()
+
     main.join()
 
