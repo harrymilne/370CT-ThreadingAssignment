@@ -2,6 +2,8 @@ from threading import Thread, Condition, active_count, get_ident
 from time import sleep
 import random
 
+DELAY = 1
+
 ##wheel initialisation
 WHEEL_NO = 6
 WHEEL_SENSORS = [None] * WHEEL_NO ##shared memory
@@ -40,7 +42,7 @@ class Runtime(Thread):
                 while STATE != "VECTOR":
                     self.cv.wait()
                 print("VECTOR thread running...")
-                sleep(1)
+                sleep(DELAY)
                 err_toss = random.randint(0, 1)
                 if err_toss: 
                     err = RandomError()
@@ -100,7 +102,7 @@ class Task(Thread):
                         print("{} thread running on motor {}... (id:{})".format(self.thread_type, self.motor_id, get_ident()))
                     else:
                         print("{} thread running... (id:{})".format(self.thread_type, get_ident()))
-                    sleep(1)
+                    sleep(DELAY)
                     STATE = "VECTOR" ##return back to main runtime
                     self.cv.notify_all()
         print("{} thread (id:{}) terminated.".format(self.thread_type, get_ident()))
