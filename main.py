@@ -42,32 +42,47 @@ class Runtime(Thread):
                 while STATE != "VECTOR":
                     self.cv.wait()
                 print("VECTOR thread running...")
+                ##readability delay
                 sleep(DELAY)
+                ##error occured?
                 err_toss = random.randint(0, 1)
-                if err_toss: 
-                    err = RandomError()
-                    print("Error occurred! {} on wheel {}.".format(err.err, err.wheel))
-                    attempts = 0
-                    fixed = 0
-                    while not fixed and attempts < 5:
-                        print("Attempt {}".format(attempts + 1))
-                        for action in SOLUTIONS[err.err]:
-                            STATE = action
-                            self.threads[action].set_motor(err.wheel)
+                if err_toss:
+                    ##generate multiple? errors 
+                    errs = [RandomError() for i in range(1, 3)]
+                    ##show errors occurred
+                    print("Error occurred! {} on wheels {}.".format(
+                        ", ".join([err.err for err in errs]), 
+                        ", ".join([str(err.wheel) for err in errs])
+                    ))
+                    ##for each error occurred
+                    for err in errs:
+                        attempts = 0
+                        fixed = False
+                        while not fixed and attempts < 5:
+                            print("Attempt {}".format(attempts + 1))
+                            for action in SOLUTIONS[err.err]:
+                                STATE = action
+                                self.threads[action].set_motor(err.wheel)
+                                self.cv.notify_all()
+                                while STATE != "VECTOR":
+                                    self.cv.wait()
+                                fixed = bool(random.randint(0, 1)) ##random y/n
+                                if fixed:
+                                    ##break from solution attempts
+                                    print("Solution succeeded!")
+                                    break
+                                else:
+                                    print("Solution failed... Retrying...")
+                                attempts += 1
+
+                        ##if error unfixable from onboard attempts
+                        if not fixed and attempts > 4:
+                            print("Max attempts reached, calling home...")
+                            ##switch to CH thread
+                            STATE = "CALL_HOME"
                             self.cv.notify_all()
                             while STATE != "VECTOR":
                                 self.cv.wait()
-                            fixed = random.randint(0, 1)
-                            if not fixed:
-                                print("Solution failed... Retrying...")
-                            attempts += 1
-
-                    if not fixed and attempts > 4:
-                        print("Max attempts reached, calling home...")
-                        STATE = "CALL_HOME"
-                        self.cv.notify_all()
-                        while STATE != "VECTOR":
-                            self.cv.wait()
                 else:
                     self.traveled += 1
                     print("Successfully vectored 1m... ({}/{})".format(self.traveled, self.distance))
