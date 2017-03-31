@@ -1,4 +1,4 @@
-from threading import Thread, Condition, active_count, get_ident
+from threading import Thread, Condition, active_count
 from time import sleep
 import random
 
@@ -26,7 +26,7 @@ class Runtime(Thread):
     global STATE
     def __init__(self, cv, threads, distance=5):
         global STATE
-        super().__init__()
+        Thread.__init__(self)
         self.cv = cv
         self.threads = threads
         self.distance = distance
@@ -95,7 +95,7 @@ class Runtime(Thread):
 ##default task
 class Task(Thread):
     def __init__(self, cv, move_type):
-        super().__init__()
+        Thread.__init__(self)
         self.cv = cv
         self.thread_type = move_type
         self.motor_id = None
@@ -114,13 +114,13 @@ class Task(Thread):
                     self.cv.wait()
                 if STATE == self.thread_type: ##if thread switched to, run logic
                     if self.motor_id:
-                        print("{} thread running on motor {}... (id:{})".format(self.thread_type, self.motor_id, get_ident()))
+                        print("{} thread running on motor {}... (id:{})".format(self.thread_type, self.motor_id, self.ident))
                     else:
-                        print("{} thread running... (id:{})".format(self.thread_type, get_ident()))
+                        print("{} thread running... (id:{})".format(self.thread_type, self.ident))
                     sleep(DELAY)
                     STATE = "VECTOR" ##return back to main runtime
                     self.cv.notify_all()
-        print("{} thread (id:{}) terminated.".format(self.thread_type, get_ident()))
+        print("{} thread (id:{}) terminated.".format(self.thread_type, self.ident))
 
 
 if __name__ == "__main__":
