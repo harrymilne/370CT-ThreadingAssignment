@@ -3,6 +3,7 @@ from time import sleep
 import random
 
 DELAY = 1
+DISTANCE = 5
 
 ##wheel initialisation
 WHEEL_NO = 6
@@ -11,10 +12,11 @@ WHEEL_SENSORS = [None] * WHEEL_NO ##shared memory
 ##states
 STATE = None
 MOVE_TYPES = ["LIFT_WHEEL", "LOWER_WHEEL", "CALL_HOME", "REVERSE"]
-ERRORS = ["FREEWHEEL", "STUCK"]
+ERRORS = ["FREEWHEEL", "BLOCKED", "SINKING"]
 SOLUTIONS = {
     "FREEWHEEL": ["LOWER_WHEEL"],
-    "STUCK": ["LIFT_WHEEL", "LOWER_WHEEL"]
+    "BLOCKED": ["LIFT_WHEEL", "REVERSE", "LOWER_WHEEL"],
+    "SINKING": ["LIFT_WHEEL"]
 }
 
 class RandomError:
@@ -124,13 +126,48 @@ class Task(Thread):
 
 
 if __name__ == "__main__":
+    print("Welcome to the Mars Rover interface.")
+    print("This is running on the default python interpreter thread ;)")
+    print("\tOptions")
+    print("\t1. Run with default options (vector: {}m, thread delay: {}s)".format(DISTANCE, DELAY))
+    print("\t\tBy default, exceptions are raised by random.")
+    print("\t2. Enter your own variables")
+    option_selected = False
+    vars_set = True
+
+    while not option_selected:
+        op = raw_input("[1]: ")
+        print
+        if op in ["", "1"]:
+            print("Default selected, random errors and vector {}m with {}s delay.".format(DISTANCE, DELAY))
+            option_selected = True
+        elif op == "2":
+            print("Custom selected, proceeding to variable selection...")
+            option_selected = True
+            vars_set = False
+
+    print
+
+    while not vars_set:
+        try:
+            secs = abs(int(raw_input("\tEnter how many seconds you would like the threads to sleep for each switch: ")))
+            vect = abs(int(raw_input("\tEnter how far the bot must vector before terminating: ")))
+            vars_set = True
+        except ValueError:
+            print("Please enter integers.")
+            continue
+        DELAY = secs
+        DISTANCE = vect
+
+    print
+
     cv = Condition()
     threads = {}
     for state in MOVE_TYPES:
         t = Task(cv, state)
         threads[state] = t
 
-    main = Runtime(cv, threads)
+    main = Runtime(cv, threads, DISTANCE)
     main.start()
 
     for thread in threads.values():
